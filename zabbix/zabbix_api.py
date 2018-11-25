@@ -33,6 +33,7 @@ import string
 import sys
 import ssl
 import socket
+
 try:
     import urllib2
 except ImportError:
@@ -42,10 +43,10 @@ from collections import deque
 
 try:
     from ssl import _create_unverified_context
+
     HAS_SSLCONTEXT = True
 except ImportError:
     HAS_SSLCONTEXT = False
-
 
 default_log_handler = logging.StreamHandler(sys.stdout)
 __logger = logging.getLogger("zabbix_api")
@@ -55,10 +56,12 @@ __logger.log(10, "Starting logging")
 try:
     # Separate module or Python <2.6
     import simplejson as json
+
     __logger.log(15, "Using simplejson library")
 except ImportError:
     # Python >=2.6
     import json
+
     __logger.log(15, "Using native json library")
 
 
@@ -67,21 +70,24 @@ def checkauth(fn):
 
     def ret(self, *args):
         self.__checkauth__()
-        return fn(self, args)
+        # return fn(self, args)
+        return fn(self)
+
     return ret
 
 
 def dojson(fn):
     def wrapper(self, method, opts):
         self.logger.log(logging.DEBUG,
-                "Going to do_request for %s with opts %s"
-                % (repr(fn), repr(opts)))
+                        "Going to do_request for %s with opts %s"
+                        % (repr(fn), repr(opts)))
+        fn(self)
         return self.do_request(self.json_obj(method, opts))['result']
+
     return wrapper
 
 
 class ZabbixAPIException(Exception):
-
     """ generic zabbix api exception
     code list:
          -32602 - Invalid params (eg already exists)
@@ -95,7 +101,6 @@ class Already_Exists(ZabbixAPIException):
 
 
 class InvalidProtoError(ZabbixAPIException):
-
     """ Recived an invalid proto """
     pass
 
@@ -119,6 +124,7 @@ class ZabbixAPI(object):
     httppasswd = None
     timeout = 10
     validate_certs = None
+
     # sub-class instances.
     # Constructor Params:
     # server: Server to connect to
@@ -202,7 +208,7 @@ class ZabbixAPI(object):
         # don't print the raw password.
         hashed_pw_string = "md5(" + hashlib.md5(l_password.encode('utf-8')).hexdigest() + ")"
         self.debug(logging.DEBUG, "Trying to login with %s:%s" %
-                (repr(l_user), repr(hashed_pw_string)))
+                   (repr(l_user), repr(hashed_pw_string)))
         obj = self.json_obj('user.login', {'user': l_user, 'password': l_password}, auth=False)
         result = self.do_request(obj)
         self.auth = result['result']
@@ -252,7 +258,7 @@ class ZabbixAPI(object):
                 e = e.message
             raise ZabbixAPIException("ssl.SSLError - %s" % e)
         except socket.timeout as e:
-            raise APITimeout("HTTP read timeout",)
+            raise APITimeout("HTTP read timeout", )
         except urllib2.URLError as e:
             if hasattr(e, 'message') and e.message:
                 e = e.message
@@ -265,7 +271,7 @@ class ZabbixAPI(object):
         # list of allowed headers.
         if response.code != 200:
             raise ZabbixAPIException("HTTP ERROR %s: %s"
-                    % (response.status, response.reason))
+                                     % (response.status, response.reason))
         reads = response.read()
         if len(reads) == 0:
             raise ZabbixAPIException("Received zero answer")
@@ -280,7 +286,7 @@ class ZabbixAPI(object):
 
         if 'error' in jobj:  # some exception
             msg = "Error %s: %s, %s while sending %s" % (jobj['error']['code'],
-                    jobj['error']['message'], jobj['error']['data'], str(json_obj))
+                                                         jobj['error']['message'], jobj['error']['data'], str(json_obj))
             if re.search(".*already\sexists.*", jobj["error"]["data"], re.I):  # already exists
                 raise Already_Exists(msg, jobj['error']['code'])
             else:
@@ -299,13 +305,14 @@ class ZabbixAPI(object):
     def __checkauth__(self):
         if not self.logged_in():
             raise ZabbixAPIException("Not logged in.")
+        else:
+            self.debug(logging.DEBUG, 'auth token: %s' % (self.auth))
 
     def __getattr__(self, name):
         return ZabbixAPISubClass(self, dict({"prefix": name}, **self.kwargs))
 
 
 class ZabbixAPISubClass(ZabbixAPI):
-
     """ wrapper class to ensure all calls go through the parent object """
     parent = None
     data = None
@@ -327,6 +334,7 @@ class ZabbixAPISubClass(ZabbixAPI):
 
         def method(*opts):
             return self.universal("%s.%s" % (self.data["prefix"], name), opts[0])
+
         return method
 
     def __checkauth__(self):
